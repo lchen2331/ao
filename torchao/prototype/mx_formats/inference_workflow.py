@@ -12,6 +12,7 @@ from typing import Optional
 import torch
 import torch.nn.functional as F
 from torch import Tensor
+from torch.nn.functional import SwizzleType
 
 from torchao.core.config import AOBaseConfig
 from torchao.prototype.mx_formats.config import _validate_elem_dtype
@@ -111,9 +112,9 @@ class MXDynamicActivationMXWeightConfig(AOBaseConfig):
     # How to calculate the block scales
     scaling_mode: ScaleCalculationMode = ScaleCalculationMode.RCEIL
 
-    # Whether to store scales in swizzled (blocked) format.
-    # CUDA uses True (SWIZZLE_32_4_4 layout), XPU uses False (row-major 2D).
-    swizzle_scales: bool = True
+    # How to store block scales.
+    # CUDA uses SWIZZLE_32_4_4 (blocked layout), XPU uses NO_SWIZZLE.
+    swizzle_type: SwizzleType = SwizzleType.SWIZZLE_32_4_4
 
     def __post_init__(self):
         assert self.activation_dtype == self.weight_dtype, (
@@ -135,7 +136,6 @@ def _mx_inference_linear_transform(
     parameter_name: str = "weight",
 ):
     weight = getattr(module, parameter_name)
-    is_swizzled_scales = config.swizzle_scales
 
     assert weight.dtype == torch.bfloat16, (
         f"Only supporting bf16 out dtype for now, got {weight.dtype}"
@@ -144,7 +144,7 @@ def _mx_inference_linear_transform(
         elem_dtype=config.activation_dtype,
         block_size=config.block_size,
         kernel_preference=config.kernel_preference,
-        is_swizzled_scales=is_swizzled_scales,
+        swizzle_type=config.swizzle_type,
         scaling_mode=config.scaling_mode,
     )
 
@@ -155,7 +155,7 @@ def _mx_inference_linear_transform(
         block_size=config.block_size,
         kernel_preference=config.kernel_preference,
         act_quant_kwargs=act_quant_kwargs,
-        is_swizzled_scales=is_swizzled_scales,
+        swizzle_type=config.swizzle_type,
         scaling_mode=config.scaling_mode,
     )
 

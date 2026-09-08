@@ -12,6 +12,7 @@ import torch
 from torch._functorch.compile_utils import fx_graph_cse
 from torch._inductor.utils import run_and_get_code
 from torch.fx.experimental.proxy_tensor import make_fx
+from torch.nn.functional import SwizzleType
 from torch.testing import FileCheck
 
 import torchao.prototype.mx_formats.mx_tensor as mx_tensor_module
@@ -65,11 +66,15 @@ def test_e8m0_scale_to_reciprocal_fp32(monkeypatch, use_direct_cast):
     assert torch.equal(actual.view(torch.int32), expected.view(torch.int32))
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+@pytest.mark.skipif(
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
+)
 @pytest.mark.parametrize("use_compile", (False, True), ids=("eager", "compiled"))
-def test_e8m0_scale_to_reciprocal_fp32_cuda_fallback(monkeypatch, use_compile):
+def test_e8m0_scale_to_reciprocal_fp32_gpu_fallback(monkeypatch, use_compile):
+    device = torch.accelerator.current_accelerator().type
     monkeypatch.setattr(mx_tensor_module, "_TORCH_VERSION_AT_LEAST_2_14", False)
-    scale_e8m0_biased = torch.arange(256, dtype=torch.uint8, device="cuda")
+    scale_e8m0_biased = torch.arange(256, dtype=torch.uint8, device=device)
     convert = (
         torch.compile(_e8m0_scale_to_reciprocal_fp32, fullgraph=True)
         if use_compile
@@ -135,7 +140,8 @@ def _test_mx(
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 @pytest.mark.parametrize("elem_dtype", SUPPORTED_ELEM_DTYPES)
 def test_hello_world(elem_dtype):
@@ -146,7 +152,8 @@ def test_hello_world(elem_dtype):
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 @pytest.mark.parametrize("scale_calculation_mode", [s for s in ScaleCalculationMode])
 @pytest.mark.parametrize("elem_dtype", SUPPORTED_ELEM_DTYPES)
@@ -158,7 +165,8 @@ def test_realistic_numerics(elem_dtype, scale_calculation_mode):
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 @pytest.mark.parametrize("elem_dtype", SUPPORTED_ELEM_DTYPES)
 def test_all_zeros(elem_dtype):
@@ -169,7 +177,8 @@ def test_all_zeros(elem_dtype):
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 @pytest.mark.parametrize("elem_dtype", SUPPORTED_ELEM_DTYPES)
 def test_some_zeros(elem_dtype):
@@ -181,20 +190,27 @@ def test_some_zeros(elem_dtype):
     _test_mx(data, elem_dtype, block_size)
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+@pytest.mark.skipif(
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
+)
 @pytest.mark.parametrize("input_dtype", (torch.float32, torch.bfloat16))
 @pytest.mark.parametrize(
     "scaling_mode", (ScaleCalculationMode.FLOOR, ScaleCalculationMode.RCEIL)
 )
 @pytest.mark.parametrize("use_compile", (False, True), ids=("eager", "compiled"))
 def test_mxfp8_corner_case_bytes(input_dtype, scaling_mode, use_compile):
-    cases = make_mxfp8_semantic_cases(input_dtype, scaling_mode, device="cuda")
+    device = torch.accelerator.current_accelerator().type
+    cases = make_mxfp8_semantic_cases(input_dtype, scaling_mode, device=device)
     quantize = torch.compile(to_mx, fullgraph=True) if use_compile else to_mx
     scales, qdata = quantize(cases.inputs, torch.float8_e4m3fn, 32, scaling_mode)
     assert_mxfp8_semantics(qdata, scales, cases)
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+@pytest.mark.skipif(
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
+)
 def test_to_mx_rceil():
     # nan
     # fmt: off
@@ -444,7 +460,8 @@ def test_to_mx_rceil_fallback_nan_branch_is_cse_compatible(monkeypatch):
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 @pytest.mark.parametrize("elem_dtype", SUPPORTED_ELEM_DTYPES)
 def test_exponent_nan_in(elem_dtype):
@@ -463,7 +480,8 @@ def test_exponent_nan_in(elem_dtype):
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 @pytest.mark.parametrize("elem_dtype", SUPPORTED_ELEM_DTYPES)
 def test_all_nan_blocks(elem_dtype):
@@ -532,7 +550,8 @@ def test_all_nan_blocks(elem_dtype):
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 @pytest.mark.parametrize("elem_dtype", SUPPORTED_ELEM_DTYPES)
 def test_exponent_nan_out(elem_dtype):
@@ -570,7 +589,7 @@ def test_exponent_nan_out(elem_dtype):
         torch.float,
         KernelPreference.EMULATED,
         None,
-        False,
+        SwizzleType.NO_SWIZZLE,
     )
     tensor_hp = tensor_mx.dequantize(torch.float)
     assert torch.all(torch.isnan(tensor_hp.flatten()[0:4]))
@@ -578,7 +597,8 @@ def test_exponent_nan_out(elem_dtype):
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 @pytest.mark.parametrize("elem_dtype", SUPPORTED_ELEM_DTYPES)
 def test_ranks(elem_dtype):
@@ -594,7 +614,8 @@ def test_ranks(elem_dtype):
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 @pytest.mark.parametrize("elem_dtype", SUPPORTED_ELEM_DTYPES)
 @pytest.mark.parametrize("B", [1, 4, 32])
@@ -612,7 +633,8 @@ def test_block_sizes(elem_dtype, B):
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 def test_from_qdata_and_scales_round_trip():
     device = torch.accelerator.current_accelerator().type
@@ -639,7 +661,8 @@ def test_from_qdata_and_scales_round_trip():
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 def test_from_qdata_and_scales_requires_float8_e8m0_scale_dtype():
     device = torch.accelerator.current_accelerator().type
@@ -660,7 +683,8 @@ def test_from_qdata_and_scales_requires_float8_e8m0_scale_dtype():
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 def test_from_qdata_and_scales_rejects_packed_uint8_qdata():
     device = torch.accelerator.current_accelerator().type
@@ -681,7 +705,8 @@ def test_from_qdata_and_scales_rejects_packed_uint8_qdata():
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 @pytest.mark.parametrize("elem_dtype", SUPPORTED_ELEM_DTYPES)
 def test_transpose(elem_dtype):
@@ -707,7 +732,8 @@ def test_transpose(elem_dtype):
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 @pytest.mark.parametrize("elem_dtype", SUPPORTED_ELEM_DTYPES)
 def test_view(elem_dtype):
@@ -719,7 +745,8 @@ def test_view(elem_dtype):
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 def test_clone():
     device = torch.accelerator.current_accelerator().type
@@ -736,7 +763,8 @@ def test_clone():
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 @pytest.mark.parametrize("elem_dtype", SUPPORTED_ELEM_DTYPES)
 @pytest.mark.parametrize("hp_dtype", [torch.float32, torch.bfloat16])
@@ -747,7 +775,7 @@ def test_to_mx_from_mx_compile_numerics(elem_dtype, hp_dtype, all_zeros):
     """
     device = torch.accelerator.current_accelerator().type
     if elem_dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
-        if device == "cuda" and not is_sm_at_least_89():
+        if torch.cuda.is_available() and not is_sm_at_least_89():
             # separate ifs because flake8 is outsmarting me
             pytest.skip("CUDA capability >= 8.9 required for float8 in triton")
 
@@ -789,7 +817,12 @@ def test_to_mx_from_mx_compile_numerics(elem_dtype, hp_dtype, all_zeros):
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
+)
+@pytest.mark.skipif(
+    torch.cuda.is_available() and not is_sm_at_least_89(),
+    reason="float8 in triton requires CUDA capability 8.9 or greater",
 )
 def test_to_mx_inductor_single_kernel():
     """
@@ -797,8 +830,6 @@ def test_to_mx_inductor_single_kernel():
     into a single kernel
     """
     device = torch.accelerator.current_accelerator().type
-    if device == "cuda" and not is_sm_at_least_89():
-        pytest.skip("float8 in triton requires CUDA capability 8.9 or greater")
     # TODO(future PR): add fp4 and fp6 here
     # TODO(#1773): add swizzled scale format here
     x = torch.randn(2048, 2048, dtype=torch.bfloat16, device=device)
@@ -809,7 +840,12 @@ def test_to_mx_inductor_single_kernel():
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
+)
+@pytest.mark.skipif(
+    torch.cuda.is_available() and not is_sm_at_least_90(),
+    reason="Need sm90+",
 )
 def test_index_select():
     """
@@ -819,8 +855,7 @@ def test_index_select():
     use 2D and 3D parameters for their expert weights.
     """
     device = torch.accelerator.current_accelerator().type
-    if device == "cuda" and not is_sm_at_least_90():
-        pytest.skip("Need sm90+")
+
     E, K, N = 128, 256, 512
     x = torch.randn(E, N, K, device=device, dtype=torch.bfloat16)
     x_mx = MXTensor.to_mx(x, torch.float8_e4m3fn, 32)
@@ -832,7 +867,12 @@ def test_index_select():
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
+)
+@pytest.mark.skipif(
+    torch.cuda.is_available() and not is_sm_at_least_89(),
+    reason="float8 in triton requires CUDA capability 8.9 or greater",
 )
 @pytest.mark.skipif(
     not torch_version_at_least("2.13.0.dev0"),
@@ -841,8 +881,6 @@ def test_index_select():
 @pytest.mark.parametrize("input_dtype", (torch.float32, torch.bfloat16))
 def test_cast_to_float8_e4m3fn_saturation_behavior(input_dtype):
     device = torch.accelerator.current_accelerator().type
-    if device == "cuda" and not is_sm_at_least_89():
-        pytest.skip("float8 in triton requires CUDA capability 8.9 or greater")
     max_val = torch.finfo(torch.float8_e4m3fn).max
 
     # create example data inside the representable range
@@ -905,9 +943,12 @@ def test_cast_to_float8_e4m3fn_saturation_behavior(input_dtype):
 )
 def test_to_blocked_from_blocked_roundtrip(shape, use_triton_kernel: bool):
     rows, cols = shape
-    test_device = "cuda" if torch.cuda.is_available() else "cpu"
+    if torch.cuda.is_available() or torch.xpu.is_available():
+        device = torch.accelerator.current_accelerator().type
+    else:
+        device = "cpu"
 
-    original = torch.randint(0, 255, (rows, cols), device=test_device, dtype=torch.uint8)
+    original = torch.randint(0, 255, (rows, cols), device=device, dtype=torch.uint8)
 
     blocked = to_blocked(original, use_triton_kernel=use_triton_kernel)
     reconstructed = from_blocked(blocked, rows, cols)
@@ -922,7 +963,8 @@ def test_to_blocked_from_blocked_roundtrip(shape, use_triton_kernel: bool):
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 @pytest.mark.parametrize("transpose", [False, True])
 @pytest.mark.parametrize(
@@ -978,7 +1020,8 @@ def test_scale_shape_matches_qdata(transpose, shape):
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 @pytest.mark.parametrize("elem_dtype", (torch.float8_e4m3fn, torch.float4_e2m1fn_x2))
 @pytest.mark.parametrize("transpose", [False, True])
@@ -1009,7 +1052,7 @@ def test_swizzle(elem_dtype, transpose, shape):
         elem_dtype,
         block_size,
         ScaleCalculationMode.FLOOR,
-        is_swizzled_scales=True,
+        swizzle_type=SwizzleType.SWIZZLE_32_4_4,
     )
 
     if transpose:
@@ -1045,7 +1088,8 @@ def test_swizzle(elem_dtype, transpose, shape):
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
 )
 @pytest.mark.parametrize("elem_dtype", [torch.float8_e4m3fn, torch.float8_e5m2])
 def test_mx_pin_memory(elem_dtype):

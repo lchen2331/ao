@@ -22,7 +22,12 @@ from torchao.utils import is_sm_at_least_100
 
 
 @pytest.mark.skipif(
-    not torch.accelerator.is_available(), reason="Accelerator not available"
+    not (torch.cuda.is_available() or torch.xpu.is_available()),
+    reason="CUDA or XPU not available",
+)
+@pytest.mark.skipif(
+    torch.cuda.is_available() and not is_sm_at_least_100(),
+    reason="needs CUDA capability 10.0+",
 )
 @pytest.mark.parametrize("recipe_name", ["mxfp8", "nvfp4"])
 def test_serialization(recipe_name):
@@ -35,6 +40,9 @@ def test_serialization(recipe_name):
     Ensure that only `import torchao.prototype.mx_formats` is needed to load MX
     and NV checkpoints.
     """
+    device = torch.accelerator.current_accelerator().type
+    if recipe_name == "nvfp4" and device == "xpu":
+        pytest.skip("NVFP4 is not supported on XPU")
 
     m = nn.Linear(32, 128, bias=False, dtype=torch.bfloat16, device=device)
     fname = None
